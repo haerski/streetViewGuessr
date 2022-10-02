@@ -2,26 +2,35 @@ import config
 import json
 import urllib.request
 import requests
+import os
+from pathlib import Path
 
 # Replace with your API key
 api_key = config.api_key
 
-# Ger randon location (in JP only for now)
-resp = requests.get("https://api.3geonames.org/?randomland=JP&json=1")
-location = resp.json()
+country = "JP"
+Path(os.path.join("pics", country)).mkdir(parents=True, exist_ok=True)
 
-# Construct urls, filenames
-lat, lng = location['nearest']['inlatt'], location['nearest']['inlongt']
-country = 'JP'
-filename = f"pics/{country}_{lat}_{lng}.jpg"
-pic_url = f"https://maps.googleapis.com/maps/api/streetview?size=300x300&source=outdoor&location={lat},{lng}&key={api_key}"
-meta_url = f"https://maps.googleapis.com/maps/api/streetview/metadata?source=outdoor&location={lat},{lng}&key={api_key}"
+for i in range(10):
+  # Get random location
+  resp = requests.get(f"https://api.3geonames.org/?randomland={country}&json=1")
+  location = resp.json()
+  print([ location['major'][data] for data in ['city', 'prov'] ])
 
-# Get Google image metadata
-with urllib.request.urlopen(meta_url) as response:
-  metadata = json.loads(response.read())
+  # Construct urls, filenames
+  lat, lng = location['nearest']['latt'], location['nearest']['longt']
+  pic_url = f"https://maps.googleapis.com/maps/api/streetview?size=300x300&source=outdoor&radius=1000&location={lat},{lng}&key={api_key}"
+  meta_url = f"https://maps.googleapis.com/maps/api/streetview/metadata?source=outdoor&radius=1000&location={lat},{lng}&key={api_key}"
 
-# Save if pic exists
-if metadata['status'] == 'OK':
-  with urllib.request.urlopen(pic_url) as response, open(filename, "wb") as file:
-    file.write(response.read())
+  # Get Google image metadata
+  with urllib.request.urlopen(meta_url) as response:
+    metadata = json.loads(response.read())
+  print(metadata['status'])
+
+  # Save if pic exists
+  if metadata['status'] == 'OK':
+    filename = os.path.join("pics", country, f"{country}_{metadata['location']['lat']}_{metadata['location']['lng']}.jpg")
+    with urllib.request.urlopen(pic_url) as response, open(filename, "wb") as file:
+      file.write(response.read())
+
+  print()
