@@ -73,9 +73,6 @@ optimizer = optimizer_conv
 scheduler = exp_lr_scheduler
 num_epochs = 300
 
-best_model_wts = copy.deepcopy(model.state_dict())
-best_acc = 0.0
-
 for epoch in range(num_epochs):
     print(f'\nEpoch {epoch}/{num_epochs - 1}')
     print('-' * 10)
@@ -143,28 +140,41 @@ for epoch in range(num_epochs):
 
     print(f'val Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
 
-    # deep copy the model
-    if epoch_acc > best_acc:
-        best_acc = epoch_acc
-        best_model_wts = copy.deepcopy(model.state_dict())
-
 ## Training done!
-print(f'Best val Acc: {best_acc:4f}')
 
 # load best model weights
-model.load_state_dict(best_model_wts)
+# model.load_state_dict(best_model_wts)
 torch.save(model.state_dict(), '100_FI_JP.pth')
+
+# Reload model from disk if needed
+model.load_state_dict(torch.load('100_FI_JP.pth'))
+model.eval()
 
 
 ### Predict new ones?
-test_dataset = torchvision.datasets.ImageFolder("pics/val", transforms.ToTensor())
+test_dataset = torchvision.datasets.ImageFolder("pics/test", weights.transforms())
 test_loader = torch.utils.data.DataLoader(test_dataset,
-                                          batch_size=4,
-                                          shuffle=False,
-                                          num_workers=4)
+                                          batch_size=1,
+                                          shuffle=True)
 # Visualize
+def un_transform(inp):
+    #Undoes the resnet transform
+    inp = inp.permute(0,2,3,1)
+    mean = torch.tensor([0.485, 0.456, 0.406])
+    std = torch.tensor([0.229, 0.224, 0.225])
+    inp = std * inp + mean
+    inp = np.clip(inp, 0, 1)
+    return inp.permute(0,3,1,2)
+
 it = iter(test_loader)
 inputs, classes = next(it)
-_, guesses = model(weights.transforms()(inputs)).max(1)
-print(f"Guessed: {[class_idx[i] for i in guesses]}\nTrue:    {[class_idx[i] for i in classes]}")
-show_pic(torchvision.utils.make_grid(inputs), [class_idx[i] for i in guesses])
+guess = nn.functional.softmax(model(inputs), dim=1)
+title = f"Probs {class_idx}: {guess[0].detach()}\nTrue:    {class_idx[classes.item()]}"
+print(title)
+show_pic(torchvision.utils.make_grid(un_transform(inputs)), title)
+
+acc = 0
+for inp, cla in test_loader:
+    _, gue = model(inp).max(1)
+    acc += (cla == gue).sum()
+print(f"Test accuracy {acc/len(test_dataset)}")
