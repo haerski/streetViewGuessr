@@ -9,9 +9,12 @@ from pathlib import Path
 api_key = config.api_key
 
 country = "JP"
-Path(os.path.join("pics", country)).mkdir(parents=True, exist_ok=True)
+# Path(os.path.join("pics/train", country)).mkdir(parents=True, exist_ok=True)
+# Path(os.path.join("pics/val", country)).mkdir(parents=True, exist_ok=True)
+Path(os.path.join("pics/test", country)).mkdir(parents=True, exist_ok=True)
 
-for i in range(10):
+n_pics = 10
+while n_pics > 0:
   # Get random location
   resp = requests.get(f"https://api.3geonames.org/?randomland={country}&json=1")
   location = resp.json()
@@ -29,8 +32,11 @@ for i in range(10):
 
   # Save if pic exists
   if metadata['status'] == 'OK':
-    filename = os.path.join("pics", country, f"{country}_{metadata['location']['lat']}_{metadata['location']['lng']}.jpg")
+    # filename = os.path.join("pics/train", country, f"{country}_{metadata['location']['lat']}_{metadata['location']['lng']}.jpg")
+    # filename = os.path.join("pics/val", country, f"{country}_{metadata['location']['lat']}_{metadata['location']['lng']}.jpg")
+    filename = os.path.join("pics/test", country, f"{country}_{metadata['location']['lat']}_{metadata['location']['lng']}.jpg")
     with urllib.request.urlopen(pic_url) as response, open(filename, "wb") as file:
       file.write(response.read())
+    n_pics-=1
 
   print()
