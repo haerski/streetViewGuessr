@@ -21,14 +21,14 @@ pic_tensor = read_image(os.path.join("pics/train", country, pic_name))
 show_pic(pic_tensor, country)
 
 ## Get pretrained CNN weights
-weights = torchvision.models.ResNet18_Weights.DEFAULT
+weights = torchvision.models.ResNet50_Weights.DEFAULT
 
 # Define training dataloader & transforms
 train_dataset = torchvision.datasets.ImageFolder("pics/train", weights.transforms())
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                          batch_size=4,
+                                          batch_size=8,
                                           shuffle=True,
                                           num_workers=4)
 # Visualize
@@ -38,13 +38,13 @@ show_pic(torchvision.utils.make_grid(inputs), [class_idx[i] for i in classes])
 # Define validation dataloader & transforms
 val_dataset = torchvision.datasets.ImageFolder("pics/val", weights.transforms())
 val_loader = torch.utils.data.DataLoader(val_dataset,
-                                          batch_size=4,
+                                          batch_size=10,
                                           shuffle=True,
                                           num_workers=4)
 
 
 ## Define model
-model_conv = torchvision.models.resnet18(weights=weights)
+model_conv = torchvision.models.resnet50(weights=weights)
 for param in model_conv.parameters():
     param.requires_grad = False
 
@@ -60,10 +60,10 @@ criterion = nn.CrossEntropyLoss()
 
 # Observe that only parameters of final layer are being optimized as
 # opposed to before.
-optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
+optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.01, momentum=0.9)
 
-# Decay LR by a factor of 0.1 every 7 epochs
-# exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
+# Decay LR by a factor of 0.1 every 50 epochs
+exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer_conv, step_size=50, gamma=0.1)
 
 
 
@@ -71,12 +71,10 @@ optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
 model = model_conv
 optimizer = optimizer_conv
 scheduler = exp_lr_scheduler
-num_epochs = 100
+num_epochs = 300
 
 best_model_wts = copy.deepcopy(model.state_dict())
 best_acc = 0.0
-
-optimizer = optim.SGD(model_conv.fc.parameters(), lr=0.0001, momentum=0.9)
 
 for epoch in range(num_epochs):
     print(f'\nEpoch {epoch}/{num_epochs - 1}')
@@ -108,7 +106,7 @@ for epoch in range(num_epochs):
         running_loss += loss.item() * inputs.size(0)
         running_corrects += torch.sum(preds == labels.data)
 
-    # scheduler.step()
+    scheduler.step()
     epoch_loss = running_loss / len(train_dataset)
     epoch_acc = running_corrects.double() / len(train_dataset)
     
@@ -155,17 +153,18 @@ print(f'Best val Acc: {best_acc:4f}')
 
 # load best model weights
 model.load_state_dict(best_model_wts)
-
+torch.save(model.state_dict(), '100_FI_JP.pth')
 
 
 ### Predict new ones?
-test_dataset = torchvision.datasets.ImageFolder("pics/test", transforms.ToTensor())
+test_dataset = torchvision.datasets.ImageFolder("pics/val", transforms.ToTensor())
 test_loader = torch.utils.data.DataLoader(test_dataset,
                                           batch_size=4,
-                                          shuffle=True,
+                                          shuffle=False,
                                           num_workers=4)
 # Visualize
-inputs, classes = next(iter(test_loader))
+it = iter(test_loader)
+inputs, classes = next(it)
 _, guesses = model(weights.transforms()(inputs)).max(1)
 print(f"Guessed: {[class_idx[i] for i in guesses]}\nTrue:    {[class_idx[i] for i in classes]}")
 show_pic(torchvision.utils.make_grid(inputs), [class_idx[i] for i in guesses])
