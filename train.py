@@ -10,6 +10,15 @@ from torchvision.io import read_image
 from torchvision.datasets import ImageFolder
 import torchvision.transforms as transforms
 
+def un_transform(inp):
+    #Undoes the resnet transform
+    inp = inp.permute(0,2,3,1)
+    mean = torch.tensor([0.485, 0.456, 0.406])
+    std = torch.tensor([0.229, 0.224, 0.225])
+    inp = std * inp + mean
+    inp = np.clip(inp, 0, 1)
+    return inp.permute(0,3,1,2)
+
 def show_pic(pic, title):
   plt.title(title)
   plt.imshow(pic.permute(1,2,0))
@@ -24,7 +33,7 @@ show_pic(pic_tensor, country)
 weights = torchvision.models.ResNet50_Weights.DEFAULT
 
 # Define training dataloader & transforms
-train_dataset = torchvision.datasets.ImageFolder("pics/train", weights.transforms())
+train_dataset = torchvision.datasets.ImageFolder("pics/train", transforms.Compose([transforms.RandomResizedCrop(256), weights.transforms()]))
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
@@ -33,7 +42,7 @@ train_loader = torch.utils.data.DataLoader(train_dataset,
                                           num_workers=4)
 # Visualize
 inputs, classes = next(iter(train_loader))
-show_pic(torchvision.utils.make_grid(inputs), [class_idx[i] for i in classes])
+show_pic(torchvision.utils.make_grid(un_transform(inputs)), [class_idx[i] for i in classes])
 
 # Define validation dataloader & transforms
 val_dataset = torchvision.datasets.ImageFolder("pics/val", weights.transforms())
@@ -157,15 +166,6 @@ test_loader = torch.utils.data.DataLoader(test_dataset,
                                           batch_size=1,
                                           shuffle=True)
 # Visualize
-def un_transform(inp):
-    #Undoes the resnet transform
-    inp = inp.permute(0,2,3,1)
-    mean = torch.tensor([0.485, 0.456, 0.406])
-    std = torch.tensor([0.229, 0.224, 0.225])
-    inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
-    return inp.permute(0,3,1,2)
-
 it = iter(test_loader)
 inputs, classes = next(it)
 guess = nn.functional.softmax(model(inputs), dim=1)
