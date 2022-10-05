@@ -1,4 +1,6 @@
 torch
 config.py
 __pycache__
-pics
+*.pth
+*.jpg
+*.png
