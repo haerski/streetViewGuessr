@@ -25,22 +25,22 @@ def show_pic(pic, title):
   plt.imshow(pic.permute(1,2,0))
 
 # Visualize on picture
-pic_name = os.listdir("pics/train/FR")[0]
+pic_name = os.listdir("pics120/train/FR")[0]
 country = pic_name[0:2]
-pic_tensor = read_image(os.path.join("pics/train", country, pic_name))
+pic_tensor = read_image(os.path.join("pics120/train", country, pic_name))
 show_pic(pic_tensor, country)
 
 ## Get pretrained CNN weights
 weights = torchvision.models.ResNet50_Weights.DEFAULT
 
 # Define training dataloader & transforms
-train_dataset = torchvision.datasets.ImageFolder("pics/train",
+train_dataset = torchvision.datasets.ImageFolder("pics120/train",
                 transform = transforms.Compose([transforms.RandomResizedCrop(256), weights.transforms()]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                          batch_size=8,
+                                          batch_size=16,
                                           shuffle=True,
                                           num_workers=4)
 # Visualize
@@ -48,7 +48,7 @@ inputs, classes = next(iter(train_loader))
 show_pic(torchvision.utils.make_grid(un_transform(inputs)), classes)
 
 # Define validation dataloader & transforms
-val_dataset = torchvision.datasets.ImageFolder("pics/val",
+val_dataset = torchvision.datasets.ImageFolder("pics120/val",
                 transform = weights.transforms(),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 val_loader = torch.utils.data.DataLoader(val_dataset,
@@ -160,16 +160,19 @@ for epoch in range(num_epochs):
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_FI_FR_JP.pth')
+torch.save(model.state_dict(), '100_BR_FI_FR_JP_US.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_FI_FR_JP.pth'))
+model.load_state_dict(torch.load('100_BR_FI_FR_JP_US.pth'))
 model.eval()
 
 
 ### Predict new ones?
-test_dataset = torchvision.datasets.ImageFolder("pics/test",
-        transform = weights.transforms(),
+test_dataset = torchvision.datasets.ImageFolder("pics120/test",
+        transform = transforms.Compose([
+                transforms.FiveCrop(400),
+                transforms.Lambda(lambda crops: torch.stack([weights.transforms()(crop) for crop in crops])),
+                ]),
         target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 test_loader = torch.utils.data.DataLoader(test_dataset,
                                           batch_size=1,
@@ -177,14 +180,18 @@ test_loader = torch.utils.data.DataLoader(test_dataset,
 it = iter(test_loader)
 # Visualize
 inputs, classes = next(it)
+b, cr, co, w, h = inputs.shape
 _, max_idx = torch.max(classes, 1)
-guess = nn.functional.softmax(model(inputs), dim=1)
-title = f"Probs {class_idx}: {guess[0].detach()}\nTrue:    {class_idx[max_idx.item()]}"
+guess = nn.functional.softmax(model(inputs.view(-1,co,w,h)).mean(0), dim=0)
+title = f"Probs {class_idx}: {guess.detach()}\nTrue:    {class_idx[max_idx.item()]}"
 print(title)
-show_pic(torchvision.utils.make_grid(un_transform(inputs)), title)
+show_pic(torchvision.utils.make_grid(un_transform(inputs.view(-1,co,w,h))), title)
 
 acc = 0
-for inp, cla in test_loader:
-    gue = model(inp).argmax(1)
-    acc += (cla.argmax(1) == gue).sum()
+for inputs, classes in test_loader:
+    b, cr, co, w, h = inputs.shape
+    guess = model(inputs.view(-1,co,w,h))
+    guess = guess.view(b, cr, -1).mean(1)
+    acc += (guess.argmax(1) == classes.argmax(1)).sum()
+
 print(f"Test accuracy {acc/len(test_dataset)}")
