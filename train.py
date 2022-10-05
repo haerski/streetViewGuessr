@@ -9,6 +9,7 @@ import torch.optim as optim
 from torchvision.io import read_image
 from torchvision.datasets import ImageFolder
 import torchvision.transforms as transforms
+%matplotlib
 
 def un_transform(inp):
     #Undoes the resnet transform
@@ -24,7 +25,7 @@ def show_pic(pic, title):
   plt.imshow(pic.permute(1,2,0))
 
 # Visualize on picture
-pic_name = os.listdir("pics/train/JP")[0]
+pic_name = os.listdir("pics/train/FR")[0]
 country = pic_name[0:2]
 pic_tensor = read_image(os.path.join("pics/train", country, pic_name))
 show_pic(pic_tensor, country)
@@ -33,7 +34,9 @@ show_pic(pic_tensor, country)
 weights = torchvision.models.ResNet50_Weights.DEFAULT
 
 # Define training dataloader & transforms
-train_dataset = torchvision.datasets.ImageFolder("pics/train", transforms.Compose([transforms.RandomResizedCrop(256), weights.transforms()]))
+train_dataset = torchvision.datasets.ImageFolder("pics/train",
+                transform = transforms.Compose([transforms.RandomResizedCrop(256), weights.transforms()]),
+                target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
@@ -42,10 +45,12 @@ train_loader = torch.utils.data.DataLoader(train_dataset,
                                           num_workers=4)
 # Visualize
 inputs, classes = next(iter(train_loader))
-show_pic(torchvision.utils.make_grid(un_transform(inputs)), [class_idx[i] for i in classes])
+show_pic(torchvision.utils.make_grid(un_transform(inputs)), classes)
 
 # Define validation dataloader & transforms
-val_dataset = torchvision.datasets.ImageFolder("pics/val", weights.transforms())
+val_dataset = torchvision.datasets.ImageFolder("pics/val",
+                transform = weights.transforms(),
+                target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 val_loader = torch.utils.data.DataLoader(val_dataset,
                                           batch_size=10,
                                           shuffle=True,
@@ -59,7 +64,7 @@ for param in model_conv.parameters():
 
 # Parameters of newly constructed modules have requires_grad=True by default
 num_ftrs = model_conv.fc.in_features
-model_conv.fc = nn.Linear(num_ftrs, 2)
+model_conv.fc = nn.Linear(num_ftrs, len(class_idx))
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
@@ -80,10 +85,10 @@ exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer_conv, step_size=50, gamma
 model = model_conv
 optimizer = optimizer_conv
 scheduler = exp_lr_scheduler
-num_epochs = 300
+num_epochs = 500
 
 for epoch in range(num_epochs):
-    print(f'\nEpoch {epoch}/{num_epochs - 1}')
+    print(f'\nEpoch {epoch + 1}/{num_epochs}')
     print('-' * 10)
 
     # train
@@ -103,14 +108,15 @@ for epoch in range(num_epochs):
         with torch.set_grad_enabled(True):
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            loss = criterion(outputs, labels)
+            loss = criterion(outputs.softmax(1), labels.to(torch.float32))
 
             # backward + optimize only if in training phase
             loss.backward()
             optimizer.step()
         # statistics
         running_loss += loss.item() * inputs.size(0)
-        running_corrects += torch.sum(preds == labels.data)
+        _, label_ind = torch.max(labels, 1)
+        running_corrects += torch.sum(preds == label_ind)
 
     scheduler.step()
     epoch_loss = running_loss / len(train_dataset)
@@ -138,11 +144,12 @@ for epoch in range(num_epochs):
         with torch.set_grad_enabled(False):
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            loss = criterion(outputs, labels)
+            loss = criterion(outputs.softmax(1), labels.to(torch.float32))
 
         # statistics
         running_loss += loss.item() * inputs.size(0)
-        running_corrects += torch.sum(preds == labels.data)
+        _, label_ind = torch.max(labels, 1)
+        running_corrects += torch.sum(preds == label_ind)
 
     epoch_loss = running_loss / len(val_dataset)
     epoch_acc = running_corrects.double() / len(val_dataset)
@@ -153,28 +160,31 @@ for epoch in range(num_epochs):
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_FI_JP.pth')
+torch.save(model.state_dict(), '100_FI_FR_JP.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_FI_JP.pth'))
+model.load_state_dict(torch.load('100_FI_FR_JP.pth'))
 model.eval()
 
 
 ### Predict new ones?
-test_dataset = torchvision.datasets.ImageFolder("pics/test", weights.transforms())
+test_dataset = torchvision.datasets.ImageFolder("pics/test",
+        transform = weights.transforms(),
+        target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 test_loader = torch.utils.data.DataLoader(test_dataset,
                                           batch_size=1,
                                           shuffle=True)
-# Visualize
 it = iter(test_loader)
+# Visualize
 inputs, classes = next(it)
+_, max_idx = torch.max(classes, 1)
 guess = nn.functional.softmax(model(inputs), dim=1)
-title = f"Probs {class_idx}: {guess[0].detach()}\nTrue:    {class_idx[classes.item()]}"
+title = f"Probs {class_idx}: {guess[0].detach()}\nTrue:    {class_idx[max_idx.item()]}"
 print(title)
 show_pic(torchvision.utils.make_grid(un_transform(inputs)), title)
 
 acc = 0
 for inp, cla in test_loader:
-    _, gue = model(inp).max(1)
-    acc += (cla == gue).sum()
+    gue = model(inp).argmax(1)
+    acc += (cla.argmax(1) == gue).sum()
 print(f"Test accuracy {acc/len(test_dataset)}")
