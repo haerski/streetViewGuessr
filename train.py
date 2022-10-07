@@ -36,13 +36,13 @@ weights = torchvision.models.ResNet50_Weights.DEFAULT
 # Define training dataloader & transforms
 train_dataset = torchvision.datasets.ImageFolder("pics120/train",
                 transform = transforms.Compose([
-                        transforms.RandomCrop(300),
+                        transforms.RandomResizedCrop(300,scale=(0.5,1)),
                         weights.transforms()]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                          batch_size=32,
+                                          batch_size=16,
                                           shuffle=True,
                                           num_workers=4)
 # Visualize
@@ -167,10 +167,10 @@ for epoch in range(num_epochs):
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_2.pth')
+torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_3.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_2.pth'))
+model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_3.pth'))
 model.eval()
 
 
