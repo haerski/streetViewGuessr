@@ -42,7 +42,7 @@ train_dataset = torchvision.datasets.ImageFolder("pics120/train",
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                          batch_size=16,
+                                          batch_size=8,
                                           shuffle=True,
                                           num_workers=4)
 # Visualize
@@ -66,6 +66,9 @@ val_loader = torch.utils.data.DataLoader(val_dataset,
 model_conv = torchvision.models.resnet50(weights=weights)
 for param in model_conv.parameters():
     param.requires_grad = False
+# Optimize last layer as well
+for param in model_conv.layer4.parameters():
+    param.requires_grad = True
 
 # Parameters of newly constructed modules have requires_grad=True by default
 num_ftrs = model_conv.fc.in_features
@@ -129,6 +132,8 @@ for epoch in range(num_epochs):
     
     print(f'train Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
 
+    if epoch%10 != 0:
+        continue
 
     ## Validation
     model.eval()   # Set model to evaluate mode
@@ -167,22 +172,24 @@ for epoch in range(num_epochs):
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_3.pth')
+torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_4.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_3.pth'))
+model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_4.pth'))
 model.eval()
 
 
+
 ### Predict new ones?
-test_dataset = torchvision.datasets.ImageFolder("pics120/val",
+# Fivecrop
+test_dataset = torchvision.datasets.ImageFolder("pics120/test",
         transform = transforms.Compose([
                 transforms.FiveCrop(400),
                 transforms.Lambda(lambda crops: torch.stack([weights.transforms()(crop) for crop in crops])),
                 ]),
         target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 test_loader = torch.utils.data.DataLoader(test_dataset,
-                                          batch_size=10,
+                                          batch_size=1,
                                           shuffle=True)
 it = iter(test_loader)
 # Visualize
@@ -190,7 +197,7 @@ inputs, classes = next(it)
 b, cr, co, w, h = inputs.shape
 _, max_idx = torch.max(classes, 1)
 guess = nn.functional.softmax(model(inputs.view(-1,co,w,h)).mean(0), dim=0)
-title = f"Probs {class_idx}: {guess.detach()}\nTrue:    {class_idx[max_idx.item()]}"
+title = f"Probs {class_idx}: {(100*guess.detach()).round()}\nTrue:    {class_idx[max_idx.item()]}"
 print(title)
 show_pic(torchvision.utils.make_grid(un_transform(inputs.view(-1,co,w,h))), title)
 
@@ -199,6 +206,30 @@ for inputs, classes in test_loader:
     b, cr, co, w, h = inputs.shape
     guess = model(inputs.view(-1,co,w,h))
     guess = guess.view(b, cr, -1).mean(1)
+    acc += (guess.argmax(1) == classes.argmax(1)).sum()
+
+print(f"Test accuracy {acc/len(test_dataset)}")
+
+
+# No fivecrop
+test_dataset = torchvision.datasets.ImageFolder("pics120/test",
+        transform = weights.transforms(),
+        target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
+test_loader = torch.utils.data.DataLoader(test_dataset,
+                                          batch_size=1,
+                                          shuffle=True)
+it = iter(test_loader)
+# Visualize
+inputs, classes = next(it)
+max_idx = classes.argmax(1)
+guess = nn.functional.softmax(model(inputs), dim=1)
+title = f"Probs {class_idx}: {(100*guess.detach()).round()}\nTrue:    {class_idx[max_idx.item()]}"
+print(title)
+show_pic(torchvision.utils.make_grid(un_transform(inputs.view(-1,co,w,h))), title)
+
+acc = 0
+for inputs, classes in test_loader:
+    guess = nn.functional.softmax(model(inputs), dim=1)
     acc += (guess.argmax(1) == classes.argmax(1)).sum()
 
 print(f"Test accuracy {acc/len(test_dataset)}")
