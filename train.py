@@ -31,13 +31,14 @@ pic_tensor = read_image(os.path.join("pics120/train", country, pic_name))
 show_pic(pic_tensor, country)
 
 ## Get pretrained CNN weights
-weights = torchvision.models.ResNet50_Weights.DEFAULT
-# weights = torchvision.models.ResNet101_Weights.DEFAULT
+# weights = torchvision.models.ResNet50_Weights.DEFAULT
+weights = torchvision.models.ResNet101_Weights.DEFAULT
 
 # Define training dataloader & transforms
 train_dataset = torchvision.datasets.ImageFolder("pics120/train",
                 transform = transforms.Compose([
-                        transforms.RandomResizedCrop(300,scale=(0.1,0.5)),
+                        transforms.RandomHorizontalFlip(),
+                        transforms.RandomResizedCrop(300),
                         weights.transforms()]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 class_idx = train_dataset.classes
@@ -64,8 +65,8 @@ val_loader = torch.utils.data.DataLoader(val_dataset,
 
 
 ## Define model
-model = torchvision.models.resnet50(weights=weights)
-# model = torchvision.models.resnet101(weights=weights)
+# model = torchvision.models.resnet50(weights=weights)
+model = torchvision.models.resnet101(weights=weights)
 for param in model.parameters():
     param.requires_grad = False
 # Optimize last layer as well
@@ -80,7 +81,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
 model = model.to(device)
 
-criterion = nn.CrossEntropyLoss(label_smoothing = 0.1)
+criterion = nn.CrossEntropyLoss(label_smoothing = 0.15)
 
 # Observe that only parameters of final layer are being optimized as
 # opposed to before.
@@ -92,7 +93,7 @@ optimizer = optim.SGD(
     lr=0.5, momentum=0.9)
 
 # Cosine anneal LR scheduler with linear warmup
-num_epochs = 500
+num_epochs = 60
 warmup_epochs = 5
 warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, start_factor=0.01, total_iters=warmup_epochs
@@ -143,7 +144,7 @@ for epoch in range(num_epochs):
     
     print(f'train Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
 
-    if epoch%10 != 0:
+    if (epoch+1)%5 != 0:
         continue
 
     ## Validation
@@ -183,10 +184,10 @@ for epoch in range(num_epochs):
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_5.pth')
+torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_6.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_5.pth'))
+model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_6.pth'))
 model.eval()
 
 
@@ -208,7 +209,7 @@ inputs, classes = next(it)
 b, cr, co, w, h = inputs.shape
 _, max_idx = torch.max(classes, 1)
 guess = nn.functional.softmax(model(inputs.view(-1,co,w,h)).mean(0), dim=0)
-title = f"Probs {class_idx}: {(100*guess.detach()).round()}\nTrue:    {class_idx[max_idx.item()]}"
+title = f"Probs {class_idx}: {(100*guess.detach()).round()}\nGuess: {class_idx[guess.detach().argmax().item()]}    True: {class_idx[max_idx.item()]}"
 print(title)
 show_pic(torchvision.utils.make_grid(un_transform(inputs.view(-1,co,w,h))), title)
 
