@@ -32,17 +32,18 @@ show_pic(pic_tensor, country)
 
 ## Get pretrained CNN weights
 weights = torchvision.models.ResNet50_Weights.DEFAULT
+# weights = torchvision.models.ResNet101_Weights.DEFAULT
 
 # Define training dataloader & transforms
 train_dataset = torchvision.datasets.ImageFolder("pics120/train",
                 transform = transforms.Compose([
-                        transforms.RandomResizedCrop(300,scale=(0.5,1)),
+                        transforms.RandomResizedCrop(300,scale=(0.1,0.5)),
                         weights.transforms()]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 class_idx = train_dataset.classes
 
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                          batch_size=8,
+                                          batch_size=32,
                                           shuffle=True,
                                           num_workers=4)
 # Visualize
@@ -57,44 +58,54 @@ val_dataset = torchvision.datasets.ImageFolder("pics120/val",
                 ]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 val_loader = torch.utils.data.DataLoader(val_dataset,
-                                          batch_size=10,
+                                          batch_size=32,
                                           shuffle=True,
                                           num_workers=4)
 
 
 ## Define model
-model_conv = torchvision.models.resnet50(weights=weights)
-for param in model_conv.parameters():
+model = torchvision.models.resnet50(weights=weights)
+# model = torchvision.models.resnet101(weights=weights)
+for param in model.parameters():
     param.requires_grad = False
 # Optimize last layer as well
-for param in model_conv.layer4.parameters():
+for param in model.layer4.parameters():
     param.requires_grad = True
 
 # Parameters of newly constructed modules have requires_grad=True by default
-num_ftrs = model_conv.fc.in_features
-model_conv.fc = nn.Linear(num_ftrs, len(class_idx))
+num_ftrs = model.fc.in_features
+model.fc = nn.Linear(num_ftrs, len(class_idx))
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
-model_conv = model_conv.to(device)
+model = model.to(device)
 
-criterion = nn.CrossEntropyLoss()
+criterion = nn.CrossEntropyLoss(label_smoothing = 0.1)
 
 # Observe that only parameters of final layer are being optimized as
 # opposed to before.
-optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.5, momentum=0.9)
+optimizer = optim.SGD(
+    [
+        {'params': model.fc.parameters()},
+        {'params': model.layer4.parameters()}
+    ],
+    lr=0.5, momentum=0.9)
 
-# Decay LR by a factor of 0.1 every 50 epochs
-exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer_conv, step_size=50, gamma=0.1)
-
+# Cosine anneal LR scheduler with linear warmup
+num_epochs = 500
+warmup_epochs = 5
+warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.01, total_iters=warmup_epochs
+)
+main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=num_epochs - warmup_epochs, eta_min=0
+)
+scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer, schedulers=[warmup_lr_scheduler, main_lr_scheduler], milestones=[warmup_epochs]
+)
 
 
 ### Training
-model = model_conv
-optimizer = optimizer_conv
-scheduler = exp_lr_scheduler
-num_epochs = 500
-
 for epoch in range(num_epochs):
     print(f'\nEpoch {epoch + 1}/{num_epochs}')
     print('-' * 10)
@@ -115,8 +126,8 @@ for epoch in range(num_epochs):
         # track history if only in train
         with torch.set_grad_enabled(True):
             outputs = model(inputs)
-            _, preds = torch.max(outputs, 1)
-            loss = criterion(outputs.softmax(1), labels.to(torch.float32))
+            loss = criterion(outputs, labels.to(torch.float32))
+            preds = outputs.argmax(1)
 
             # backward + optimize only if in training phase
             loss.backward()
@@ -155,7 +166,7 @@ for epoch in range(num_epochs):
             b, cr, co, w, h = inputs.shape
             outputs = model(inputs.view(-1,co,w,h))
             outputs = outputs.view(b, cr, -1).mean(1)
-            loss = criterion(outputs.softmax(1), labels.to(torch.float32))
+            loss = criterion(outputs, labels.to(torch.float32))
 
         # statistics
         running_loss += loss.item() * inputs.size(0)
@@ -172,10 +183,10 @@ for epoch in range(num_epochs):
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_4.pth')
+torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_5.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_4.pth'))
+model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_5.pth'))
 model.eval()
 
 
