@@ -1,5 +1,5 @@
 # streetViewGuessr
-AI powered Street View image country guesser, inspired by GeoGuessr.
+AI powered Street View image country guesser, inspired by the game [GeoGuessr](https://www.geoguessr.com/).
 
 Given input images, tries to guess which country the image is taken in.
 The model is trained using Google Street View images from Brazil, France, Finland, Japan and US.
