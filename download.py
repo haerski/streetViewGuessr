@@ -25,7 +25,8 @@ for phase, size in zip(phases,sizes):
 
       # Construct urls, filenames
       lat, lng = location['nearest']['latt'], location['nearest']['longt']
-      pic_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x600&source=outdoor&radius=1000&fov=120&location={lat},{lng}&key={api_key}"
+      hdg = (360*torch.rand(1)).round().item()
+      pic_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x600&source=outdoor&radius=1000&fov=120&location={lat},{lng}&heading={hdg}&key={api_key}"
       meta_url = f"https://maps.googleapis.com/maps/api/streetview/metadata?source=outdoor&radius=1000&location={lat},{lng}&key={api_key}"
 
       # Get Google image metadata

@@ -38,7 +38,7 @@ weights = torchvision.models.ResNet101_Weights.DEFAULT
 train_dataset = torchvision.datasets.ImageFolder("pics120/train",
                 transform = transforms.Compose([
                         transforms.RandomHorizontalFlip(),
-                        transforms.RandomResizedCrop(300),
+                        transforms.RandomResizedCrop(300, scale=(0.01, 0.3)),
                         weights.transforms()]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 class_idx = train_dataset.classes
@@ -53,10 +53,11 @@ show_pic(torchvision.utils.make_grid(un_transform(inputs)), [class_idx[i] for i 
 
 # Define validation dataloader & transforms
 val_dataset = torchvision.datasets.ImageFolder("pics120/val",
-                transform = transforms.Compose([
-                    transforms.FiveCrop(400),
-                    transforms.Lambda(lambda crops: torch.stack([weights.transforms()(crop) for crop in crops])),
-                ]),
+                transform = weights.transforms(),
+                # transforms.Compose([
+                #     transforms.FiveCrop(400),
+                #     transforms.Lambda(lambda crops: torch.stack([weights.transforms()(crop) for crop in crops])),
+                # ]),
                 target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 val_loader = torch.utils.data.DataLoader(val_dataset,
                                           batch_size=32,
@@ -81,7 +82,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
 model = model.to(device)
 
-criterion = nn.CrossEntropyLoss(label_smoothing = 0.15)
+criterion = nn.CrossEntropyLoss(label_smoothing = 0.1)
 
 # Observe that only parameters of final layer are being optimized as
 # opposed to before.
@@ -94,7 +95,7 @@ optimizer = optim.SGD(
 
 # Cosine anneal LR scheduler with linear warmup
 num_epochs = 60
-warmup_epochs = 5
+warmup_epochs = 6
 warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, start_factor=0.01, total_iters=warmup_epochs
 )
@@ -106,7 +107,12 @@ scheduler = torch.optim.lr_scheduler.SequentialLR(
 )
 
 
+
 ### Training
+tr_losses = torch.zeros(num_epochs)
+val_losses = torch.zeros(num_epochs)
+best_model_wts = copy.deepcopy(model.state_dict())
+best_acc = 0.0
 for epoch in range(num_epochs):
     print(f'\nEpoch {epoch + 1}/{num_epochs}')
     print('-' * 10)
@@ -140,12 +146,13 @@ for epoch in range(num_epochs):
 
     scheduler.step()
     epoch_loss = running_loss / len(train_dataset)
+    tr_losses[epoch] = epoch_loss
     epoch_acc = running_corrects.double() / len(train_dataset)
     
     print(f'train Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
 
-    if (epoch+1)%5 != 0:
-        continue
+    # if (epoch+1)%3 != 0:
+    #     continue
 
     ## Validation
     model.eval()   # Set model to evaluate mode
@@ -164,9 +171,7 @@ for epoch in range(num_epochs):
         # forward
         # track history if only in train
         with torch.set_grad_enabled(False):
-            b, cr, co, w, h = inputs.shape
-            outputs = model(inputs.view(-1,co,w,h))
-            outputs = outputs.view(b, cr, -1).mean(1)
+            outputs = model(inputs)
             loss = criterion(outputs, labels.to(torch.float32))
 
         # statistics
@@ -176,18 +181,23 @@ for epoch in range(num_epochs):
         running_corrects += torch.sum(preds == corrects)
 
     epoch_loss = running_loss / len(val_dataset)
+    val_losses[epoch] = epoch_loss
     epoch_acc = running_corrects.double() / len(val_dataset)
 
     print(f'val Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+
+    if epoch_acc > best_acc:
+        best_acc = epoch_acc
+        best_model_wts = copy.deepcopy(model.state_dict())
 
 ## Training done!
 
 # load best model weights
 # model.load_state_dict(best_model_wts)
-torch.save(model.state_dict(), '100_BR_FI_FR_JP_US_6.pth')
+torch.save(model.state_dict(), 'BR_FI_FR_JP_US.pth')
 
 # Reload model from disk if needed
-model.load_state_dict(torch.load('100_BR_FI_FR_JP_US_6.pth'))
+model.load_state_dict(torch.load('BR_FI_FR_JP_US.pth'))
 model.eval()
 
 
@@ -228,20 +238,23 @@ test_dataset = torchvision.datasets.ImageFolder("pics120/test",
         transform = weights.transforms(),
         target_transform = transforms.Lambda(lambda c: nn.functional.one_hot(torch.tensor(c), num_classes=len(class_idx))))
 test_loader = torch.utils.data.DataLoader(test_dataset,
-                                          batch_size=1,
+                                          batch_size=3,
                                           shuffle=True)
 it = iter(test_loader)
 # Visualize
 inputs, classes = next(it)
 max_idx = classes.argmax(1)
 guess = nn.functional.softmax(model(inputs), dim=1)
-title = f"Probs {class_idx}: {(100*guess.detach()).round()}\nTrue:    {class_idx[max_idx.item()]}"
+title = f"Probs {class_idx}: {(100*guess.detach()).round()}\nGuess: {class_idx[guess.argmax()]}  True: {class_idx[max_idx.item()]}"
 print(title)
 show_pic(torchvision.utils.make_grid(un_transform(inputs.view(-1,co,w,h))), title)
 
 acc = 0
+conf = torch.zeros(5,5)
 for inputs, classes in test_loader:
     guess = nn.functional.softmax(model(inputs), dim=1)
     acc += (guess.argmax(1) == classes.argmax(1)).sum()
+    for g, t in zip(guess.argmax(1), classes.argmax(1)):
+        conf[g,t] += 1
 
 print(f"Test accuracy {acc/len(test_dataset)}")
