@@ -224,13 +224,17 @@ print(title)
 show_pic(torchvision.utils.make_grid(un_transform(inputs.view(-1,co,w,h))), title)
 
 acc = 0
+conf = torch.zeros(5,5)
 for inputs, classes in test_loader:
     b, cr, co, w, h = inputs.shape
     guess = model(inputs.view(-1,co,w,h))
     guess = guess.view(b, cr, -1).mean(1)
     acc += (guess.argmax(1) == classes.argmax(1)).sum()
+    for g, t in zip(guess.argmax(1), classes.argmax(1)):
+        conf[g,t] += 1
 
 print(f"Test accuracy {acc/len(test_dataset)}")
+print(conf)
 
 
 # No fivecrop
@@ -258,3 +262,9 @@ for inputs, classes in test_loader:
         conf[g,t] += 1
 
 print(f"Test accuracy {acc/len(test_dataset)}")
+
+
+
+### Save to TorchScript
+model_scripted = torch.jit.script(model)
+model_scripted.save("BR_FI_FR_JP_US_scripted.pt")
